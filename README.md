@@ -13,7 +13,7 @@ Add the plugin and install:
 
 ```
 /plugin marketplace add antiguru/timely-skill
-/plugin install timely-skill@antiguru-timely-skill
+/plugin install timely-skill@timely-dataflow-skill
 ```
 
 Skills are then available as `/timely-skill:writing-timely-operators`.
