@@ -1,0 +1,66 @@
+[
+  {
+    "query": "I need to write a timely dataflow operator that groups incoming records by key and emits the count once the timestamp is complete. Should I use unary or unary_frontier?",
+    "should_trigger": true
+  },
+  {
+    "query": "My timely operator keeps getting rescheduled and I think it's because I'm not draining the input. How do I properly consume all messages in the input handle?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm building a streaming pipeline with timely and need to emit a large number of records per input. How do I yield partway through to avoid memory pressure?",
+    "should_trigger": true
+  },
+  {
+    "query": "What's the difference between Pipeline and Exchange pact in timely? My operator just filters rows, do I really need Exchange?",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a timely operator using OperatorBuilder and I want to tell the system that output 0 only depends on input 1, not input 0. How do I express that connectivity?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to add a custom .my_transform() method to timely's Stream type, similar to how .filter() and .map() work. What's the pattern for writing an extension trait?",
+    "should_trigger": true
+  },
+  {
+    "query": "My timely operator accumulates state per-key and should only emit results when the frontier advances past a timestamp. How do I check the frontier correctly with partial orders like Product<u64, u64>?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm using timely's flat_map but the closure needs to buffer some state across calls. Should I switch to unary_frontier or is there a simpler way?",
+    "should_trigger": true
+  },
+  {
+    "query": "How do I set up a differential dataflow Arrange operator and query it with a trace handle?",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to deploy a timely dataflow cluster across 4 machines using the networking layer. How do I configure the communication threads and process allocation?",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you help me write a Flink operator that windows events into 5-minute tumbling windows and computes an average?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to parse a CSV file in Rust and compute some aggregates. No streaming, just batch processing.",
+    "should_trigger": false
+  },
+  {
+    "query": "How does timely's progress tracking protocol work? I'm trying to understand pointstamps and the internal path summaries.",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to benchmark my timely dataflow graph end-to-end. What's the best way to measure throughput and latency?",
+    "should_trigger": false
+  },
+  {
+    "query": "Help me write a reduce operator in differential dataflow that computes top-k per key using the Threshold trait.",
+    "should_trigger": false
+  },
+  {
+    "query": "My timely program panics at startup with 'failed to bind TCP socket'. How do I fix the networking configuration?",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,60 @@
+name: Check upstream timely releases
+
+on:
+  schedule:
+    # Weekly on Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get tracked version
+        id: tracked
+        run: |
+          version=$(grep -oP 'timely v\K[0-9]+\.[0-9]+' skills/writing-timely-operators/SKILL.md | head -1)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest crates.io version
+        id: upstream
+        run: |
+          version=$(curl -s https://crates.io/api/v1/crates/timely | jq -r '.crate.max_stable_version')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue if version changed
+        if: ${{ !startsWith(steps.upstream.outputs.version, steps.tracked.outputs.version) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKED: ${{ steps.tracked.outputs.version }}
+          UPSTREAM: ${{ steps.upstream.outputs.version }}
+        run: |
+          # Check if an issue already exists
+          existing=$(gh issue list --label "upstream-release" --state open --json number --jq 'length')
+          if [ "$existing" -gt 0 ]; then
+            echo "Open issue already exists, skipping."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Update skill for timely ${UPSTREAM}" \
+            --label "upstream-release" \
+            --body "$(cat <<EOF
+          [timely ${UPSTREAM}](https://crates.io/crates/timely/${UPSTREAM}) is available on crates.io.
+          The writing-timely-operators skill currently targets **v${TRACKED}**.
+
+          Files to diff against the skill:
+          * \`timely/src/dataflow/operators/generic/operator.rs\` — operator constructors, closure signatures
+          * \`timely/src/dataflow/operators/generic/handles.rs\` — input draining methods
+          * \`timely/src/dataflow/operators/generic/builder_rc.rs\` — OperatorBuilder
+          * \`timely/src/dataflow/operators/capability.rs\` — Capability, CapabilitySet
+          * \`timely/src/dataflow/operators/generic/notificator.rs\` — FrontierNotificator
+          * \`timely/src/channels/pushers/tee.rs\` — Tee behavior
+          * \`container/src/lib.rs\` — CapacityContainerBuilder
+          EOF
+          )"

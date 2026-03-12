@@ -1,0 +1,37 @@
+{
+  "skill_name": "writing-timely-operators",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Write a timely operator that takes a stream of (String, u64) and outputs the string repeated n times, where n is the u64. Use flat_map.",
+      "expected_output": "A simple flat_map or unary operator using Pipeline pact, no frontier needed",
+      "assertions": [
+        {"text": "Uses flat_map as requested", "type": "code_pattern"},
+        {"text": "Uses Pipeline pact (not Exchange)", "type": "code_pattern"},
+        {"text": "Code compiles against timely", "type": "compilation"}
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Write a custom timely operator using unary_frontier that receives (String, i64) pairs and, once a timestamp is complete, emits the sum per key as (String, i64). Exchange by the string key.",
+      "expected_output": "A unary_frontier operator with Exchange pact, stash/emit/retain pattern, frontier check before emitting",
+      "assertions": [
+        {"text": "Uses unary_frontier as requested", "type": "code_pattern"},
+        {"text": "Uses Exchange pact keyed on the string", "type": "code_pattern"},
+        {"text": "Checks frontier before emitting (!frontier.less_equal or equivalent)", "type": "code_pattern"},
+        {"text": "Drops capabilities after emitting (stash.retain or equivalent cleanup)", "type": "code_pattern"},
+        {"text": "Code compiles against timely", "type": "compilation"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write a timely operator that receives u64 values and for each value x emits all numbers 0..x. It should yield after producing 10,000 records per scheduling to avoid flooding memory.",
+      "expected_output": "An operator using build_reschedule or Activator pattern, with a fuel/budget mechanism to limit output per scheduling",
+      "assertions": [
+        {"text": "Uses a yielding mechanism (build_reschedule, Activator, or feedback loop)", "type": "code_pattern"},
+        {"text": "Has a fuel/budget mechanism limiting output per scheduling (~10,000 records)", "type": "code_pattern"},
+        {"text": "Code compiles against timely", "type": "compilation"}
+      ]
+    }
+  ]
+}

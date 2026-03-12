@@ -1,0 +1,28 @@
+name: Release plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Package plugin
+        run: |
+          mkdir -p dist
+          zip -r "dist/timely-skill.skill" \
+            .claude-plugin/ skills/ LICENSE-* README.md \
+            -x '*/evals/*' '*/__pycache__/*' '*/.DS_Store'
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.skill
+          generate_release_notes: true
