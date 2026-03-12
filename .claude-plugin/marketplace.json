@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "timely-skill",
-      "source": ".",
+      "source": "./skills/writing-timely-operators",
       "description": "Skills for writing timely dataflow and differential dataflow operators",
       "version": "0.1.0",
       "license": "MIT OR Apache-2.0",
