@@ -1,0 +1,16 @@
+{
+  "name": "timely-dataflow-skill",
+  "owner": {
+    "name": "antiguru"
+  },
+  "plugins": [
+    {
+      "name": "timely-skill",
+      "source": ".",
+      "description": "Skills for writing timely dataflow and differential dataflow operators",
+      "version": "0.1.0",
+      "license": "MIT OR Apache-2.0",
+      "keywords": ["timely", "dataflow", "differential-dataflow", "rust"]
+    }
+  ]
+}
