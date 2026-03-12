@@ -16,6 +16,14 @@ API details (especially closure signatures and container traits) may differ in o
 This skill covers the patterns for writing correct and efficient custom operators in timely dataflow.
 When writing an operator, read the relevant section below, then check the source files it references for the current API signatures.
 
+## All workers must construct the same dataflow graph
+
+Every worker must create every operator and every stream, even if only one worker does useful work.
+Timely expects matching progress messages from all workers.
+Rendering an operator on a subset of workers causes crashes or hangs because the missing workers never send the expected progress updates.
+
+To restrict work to one worker, build the operator on all workers but have non-active workers skip the work (see "Single-worker operators" below).
+
 ## Choosing an operator shape
 
 Timely provides several operator constructors on the `Operator` trait (`timely/src/dataflow/operators/generic/operator.rs`).
@@ -215,6 +223,18 @@ Use `CapabilitySet` to manage multiple live capabilities.
 
 When writing a generic operator, do not assume total order unless you add a `where T: TotalOrder` bound.
 If you can specialize for total order, it often simplifies the logic and enables optimizations (e.g., a single "watermark" instead of an antichain scan).
+
+## Antichain partial order
+
+`PartialOrder` for `Antichain<T>`: `a <= b` iff every element in `b` has some element in `a` that is `<=` it.
+This means:
+
+* `{0} <= {}` is **true** (vacuously — no elements in `{}` to check)
+* `{} <= {0}` is **false**
+* The empty antichain `{}` is the **maximum** (most advanced frontier)
+
+An empty frontier means "no more data will ever arrive."
+A frontier containing `T::minimum()` means "any timestamp is still possible."
 
 ## Run to completion vs. yielding
 
