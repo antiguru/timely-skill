@@ -1,4 +1,4 @@
-name: Check upstream timely releases
+name: Check upstream releases
 
 on:
   schedule:
@@ -12,49 +12,70 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - crate: timely
+            skill: skills/writing-timely-operators/SKILL.md
+            pattern: 'timely v\K[0-9]+\.[0-9]+'
+            files: |
+              * `timely/src/dataflow/operators/generic/operator.rs` — operator constructors, closure signatures
+              * `timely/src/dataflow/operators/generic/handles.rs` — input draining methods
+              * `timely/src/dataflow/operators/generic/builder_rc.rs` — OperatorBuilder
+              * `timely/src/dataflow/operators/capability.rs` — Capability, CapabilitySet
+              * `timely/src/dataflow/operators/generic/notificator.rs` — FrontierNotificator
+              * `timely/src/channels/pushers/tee.rs` — Tee behavior
+              * `container/src/lib.rs` — CapacityContainerBuilder
+          - crate: differential-dataflow
+            skill: skills/writing-differential-operators/SKILL.md
+            pattern: 'differential-dataflow v\K[0-9]+\.[0-9]+'
+            files: |
+              * `differential-dataflow/src/collection.rs` — Collection type, high-level methods
+              * `differential-dataflow/src/operators/reduce.rs` — reduce_trace
+              * `differential-dataflow/src/operators/join.rs` — join_core, join_traces
+              * `differential-dataflow/src/operators/arrange/arrangement.rs` — Arranged, arrange_core
+              * `differential-dataflow/src/trace/mod.rs` — Trace, BatchReader, Cursor traits
+              * `differential-dataflow/src/operators/iterate.rs` — iterate, Variable
+              * `differential-dataflow/src/difference.rs` — Semigroup, Abelian, Multiply
+              * `dogsdogsdogs/src/operators/half_join.rs` — delta join operators
     steps:
       - uses: actions/checkout@v6
 
       - name: Get tracked version
         id: tracked
         run: |
-          version=$(grep -oP 'timely v\K[0-9]+\.[0-9]+' skills/writing-timely-operators/SKILL.md | head -1)
+          version=$(grep -oP '${{ matrix.pattern }}' '${{ matrix.skill }}' | head -1)
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Get latest crates.io version
         id: upstream
         run: |
-          version=$(curl -s https://crates.io/api/v1/crates/timely | jq -r '.crate.max_stable_version')
+          version=$(curl -s 'https://crates.io/api/v1/crates/${{ matrix.crate }}' | jq -r '.crate.max_stable_version')
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Open issue if version changed
         if: ${{ !startsWith(steps.upstream.outputs.version, steps.tracked.outputs.version) }}
         env:
           GH_TOKEN: ${{ github.token }}
+          CRATE: ${{ matrix.crate }}
           TRACKED: ${{ steps.tracked.outputs.version }}
           UPSTREAM: ${{ steps.upstream.outputs.version }}
+          FILES: ${{ matrix.files }}
         run: |
-          # Check if an issue already exists
-          existing=$(gh issue list --label "upstream-release" --state open --json number --jq 'length')
+          existing=$(gh issue list --label "upstream-release" --state open --search "${CRATE}" --json number --jq 'length')
           if [ "$existing" -gt 0 ]; then
             echo "Open issue already exists, skipping."
             exit 0
           fi
 
           gh issue create \
-            --title "Update skill for timely ${UPSTREAM}" \
+            --title "Update skill for ${CRATE} ${UPSTREAM}" \
             --label "upstream-release" \
             --body "$(cat <<EOF
-          [timely ${UPSTREAM}](https://crates.io/crates/timely/${UPSTREAM}) is available on crates.io.
-          The writing-timely-operators skill currently targets **v${TRACKED}**.
+          [${CRATE} ${UPSTREAM}](https://crates.io/crates/${CRATE}/${UPSTREAM}) is available on crates.io.
+          The skill currently targets **v${TRACKED}**.
 
           Files to diff against the skill:
-          * \`timely/src/dataflow/operators/generic/operator.rs\` — operator constructors, closure signatures
-          * \`timely/src/dataflow/operators/generic/handles.rs\` — input draining methods
-          * \`timely/src/dataflow/operators/generic/builder_rc.rs\` — OperatorBuilder
-          * \`timely/src/dataflow/operators/capability.rs\` — Capability, CapabilitySet
-          * \`timely/src/dataflow/operators/generic/notificator.rs\` — FrontierNotificator
-          * \`timely/src/channels/pushers/tee.rs\` — Tee behavior
-          * \`container/src/lib.rs\` — CapacityContainerBuilder
+          ${FILES}
           EOF
           )"

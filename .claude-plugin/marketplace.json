@@ -11,6 +11,14 @@
       "version": "0.1.0",
       "license": "MIT OR Apache-2.0",
       "keywords": ["timely", "dataflow", "differential-dataflow", "rust"]
+    },
+    {
+      "name": "differential-skill",
+      "source": "./skills/writing-differential-operators",
+      "description": "Skills for writing differential dataflow operators and working with columnar data",
+      "version": "0.1.0",
+      "license": "MIT OR Apache-2.0",
+      "keywords": ["differential-dataflow", "columnar", "arrangement", "trace", "rust"]
     }
   ]
 }
