@@ -19,6 +19,14 @@
       "version": "0.1.0",
       "license": "MIT OR Apache-2.0",
       "keywords": ["differential-dataflow", "columnar", "arrangement", "trace", "rust"]
+    },
+    {
+      "name": "columnar-skill",
+      "source": "./skills/using-columnar",
+      "description": "Skill for working with the columnar crate for struct-of-arrays data layout",
+      "version": "0.1.0",
+      "license": "MIT OR Apache-2.0",
+      "keywords": ["columnar", "struct-of-arrays", "serialization", "rust"]
     }
   ]
 }

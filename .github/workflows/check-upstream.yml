@@ -38,6 +38,18 @@ jobs:
               * `differential-dataflow/src/operators/iterate.rs` — iterate, Variable
               * `differential-dataflow/src/difference.rs` — Semigroup, Abelian, Multiply
               * `dogsdogsdogs/src/operators/half_join.rs` — delta join operators
+          - crate: columnar
+            skill: skills/using-columnar/SKILL.md
+            pattern: 'columnar v\K[0-9]+\.[0-9]+'
+            files: |
+              * `src/lib.rs` — Columnar trait, Container, Borrow, type aliases
+              * `src/primitive.rs` — primitive type containers
+              * `src/string.rs` — Strings container
+              * `src/vector.rs` — Vecs container
+              * `src/tuple.rs` — tuple containers
+              * `src/sums.rs` — Results, Options, RankSelect
+              * `src/lookback.rs` — Lookbacks, Repeats compression
+              * `src/bytes.rs` — AsBytes, FromBytes serialization
     steps:
       - uses: actions/checkout@v6
 
