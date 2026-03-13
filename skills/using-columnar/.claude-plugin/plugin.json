@@ -1,0 +1,8 @@
+{
+  "name": "columnar-skill",
+  "version": "0.1.0",
+  "description": "Skill for working with the columnar crate for struct-of-arrays data layout",
+  "repository": "https://github.com/antiguru/timely-skill",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["columnar", "struct-of-arrays", "serialization", "rust"]
+}

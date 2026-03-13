@@ -79,3 +79,52 @@ jobs:
           ${FILES}
           EOF
           )"
+
+  check-columnar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get tracked version
+        id: tracked
+        run: |
+          version=$(grep -oP 'columnar v\K[0-9]+\.[0-9]+' skills/using-columnar/SKILL.md | head -1)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest crates.io version
+        id: upstream
+        run: |
+          version=$(curl -s https://crates.io/api/v1/crates/columnar | jq -r '.crate.max_stable_version')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue if version changed
+        if: ${{ !startsWith(steps.upstream.outputs.version, steps.tracked.outputs.version) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKED: ${{ steps.tracked.outputs.version }}
+          UPSTREAM: ${{ steps.upstream.outputs.version }}
+        run: |
+          existing=$(gh issue list --label "upstream-release" --state open --search "columnar" --json number --jq 'length')
+          if [ "$existing" -gt 0 ]; then
+            echo "Open issue already exists, skipping."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Update skill for columnar ${UPSTREAM}" \
+            --label "upstream-release" \
+            --body "$(cat <<EOF
+          [columnar ${UPSTREAM}](https://crates.io/crates/columnar/${UPSTREAM}) is available on crates.io.
+          The using-columnar skill currently targets **v${TRACKED}**.
+
+          Files to diff against the skill:
+          * \`src/lib.rs\` — Columnar trait, Container, Borrow, type aliases
+          * \`src/primitive.rs\` — primitive type containers
+          * \`src/string.rs\` — Strings container
+          * \`src/vector.rs\` — Vecs container
+          * \`src/tuple.rs\` — tuple containers
+          * \`src/sums.rs\` — Results, Options, RankSelect
+          * \`src/lookback.rs\` — Lookbacks, Repeats compression
+          * \`src/bytes.rs\` — AsBytes, FromBytes serialization
+          EOF
+          )"
