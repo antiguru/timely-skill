@@ -166,7 +166,8 @@ If you hold a `TraceAgent` manually, you must advance compaction yourself.
 
 ## Core operators
 
-Each high-level operator has a lower-level variant that operates directly on `Arranged` inputs.
+Each high-level operator has a lower-level variant that operates directly on `Arranged` inputs or forms arrangements.
+The core operators are independent of the collection interface.
 Use these when you already have an arrangement to avoid redundant re-arrangement.
 
 ### `reduce_trace`
@@ -328,44 +329,7 @@ Key types:
 
 ## Columnar data representation
 
-The `columnar` crate (v0.11) transforms `Vec<T>` into a struct-of-arrays layout for cache-friendly access and efficient serialization.
+DD can use columnar containers (from the `columnar` crate v0.11) as backing storage for trace batches.
+The `ColumnarLayout` type maps each column (keys, vals, times, diffs) to columnar storage, and `Coltainer<C>` wraps a columnar container to implement DD's `BatchContainer` trait.
 
-### Core traits
-
-| Trait | Purpose |
-|---|---|
-| `Columnar` | Marks types representable in columnar form. Associated type `Container`. |
-| `Container` | Storage backend with borrowing, capacity, and extension. |
-| `Push<T>` | Accept items: `push(&mut self, item: T)` |
-| `Index` | Read-only access: `get(&self, index: usize) -> Self::Ref` |
-| `IndexMut` | Mutable access |
-| `Len` | Report element count |
-| `Clear` | Reset without deallocating |
-| `AsBytes` / `FromBytes` | Byte-level serialization |
-| `HeapSize` | Report memory usage (active, allocated) |
-
-### Derive macro
-
-```rust
-#[derive(Columnar)]
-struct MyRecord {
-    key: String,
-    value: u64,
-    tags: Vec<String>,
-}
-```
-
-`#[derive(Columnar)]` generates the columnar container type automatically.
-The container stores each field in its own column (e.g., keys in one `Vec`, values in another).
-
-### Integration with differential dataflow
-
-DD uses columnar containers as an alternative to `Vec<(D, T, R)>` for collection storage.
-The `Collection<G, C>` type is generic over the container `C`.
-When `C` is a columnar container, records are stored in struct-of-arrays layout, improving cache locality for operations that touch only a subset of fields.
-
-Columnar containers implement the timely `Container` trait, so they work seamlessly with timely's push/pull communication and DD's batching infrastructure.
-
-Type aliases:
-* `ContainerOf<T>` = `<T as Columnar>::Container`
-* `Ref<'a, T>` = `<ContainerOf<T> as Borrow>::Ref<'a>` — the reference type for accessing elements
+For the full columnar API (traits, derive macro, container types, serialization), see the `using-columnar` skill.
