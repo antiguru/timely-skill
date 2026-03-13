@@ -275,13 +275,201 @@ This is the `Ref` type for `Vecs` — when you index a `Vecs<Strings>`, you get 
 `IterOwn<S>` iterates an `Index + Len` type by calling `get(i)` for each position.
 It implements `ExactSizeIterator`.
 
-## Integration with timely and differential dataflow
+## Integration with timely dataflow
 
-Columnar containers serve as an alternative to `Vec<T>` in timely streams and differential collections.
-The `Collection<G, C>` type in differential dataflow is generic over the container `C`.
-When `C` is a columnar container, records are stored in struct-of-arrays layout during communication and batching.
+Columnar containers do not implement timely's container traits directly.
+A `Column<C>` wrapper bridges the two worlds, handling typed storage, byte deserialization, and alignment.
 
-To use columnar containers in a dataflow, the container must implement timely's `Container` trait (separate from columnar's `Container` trait) which requires `Len`, `Clear`, `Default`, and capacity management.
+### Column wrapper
+
+`Column<C>` is an enum with three variants:
+
+```rust
+pub enum Column<C> {
+    Typed(C),           // owned columnar container
+    Bytes(arc::Bytes),  // zero-copy from network, u64-aligned
+    Align(Arc<[u64]>),  // relocated copy when Bytes is misaligned
+}
+```
+
+All three variants support `.borrow()` → `C::Borrowed<'_>`, so operator code does not need to distinguish them.
+The `Bytes` variant avoids deserialization entirely — data arrives from the network as aligned bytes and is read in place.
+
+`Column<C>` implements timely's traits by delegating to the inner container:
+
+| Timely trait | Column implementation |
+|---|---|
+| `PushInto<T>` | Delegates to `C::push()` (only works on `Typed` variant) |
+| `ContainerBytes` | `from_bytes` creates `Bytes` or `Align`; `into_bytes` serializes via `Indexed::write` |
+| `SizableContainer` | `at_capacity` checks if serialized size exceeds ~1 MB |
+| `DrainContainer` | Returns `IterOwn` over the borrowed contents |
+| `Accountable` | `record_count` returns `borrow().len()` |
+
+### ColumnBuilder
+
+`ColumnBuilder<C>` accumulates items into a typed columnar container and flushes completed batches as `Column<C>`:
+
+```rust
+pub struct ColumnBuilder<C> {
+    current: C,
+    empty: Option<Column<C>>,
+    pending: VecDeque<Column<C>>,
+}
+```
+
+On each `push_into`, it checks the serialized word count.
+When close to a 2 MB boundary (within 10% slop), it encodes the container into aligned bytes and enqueues it.
+This batching amortizes the encoding cost.
+
+`ColumnBuilder` implements timely's `ContainerBuilder` + `LengthPreservingContainerBuilder`.
+
+### Timely example: columnar wordcount
+
+Define a columnar record type using the derive macro, then use `Column` and `ColumnBuilder` in the dataflow:
+
+```rust
+#[derive(columnar::Columnar)]
+struct WordCount {
+    text: String,
+    diff: i64,
+}
+
+type InnerContainer = <WordCount as columnar::Columnar>::Container;
+type Container = Column<InnerContainer>;
+
+// Input handle uses ColumnBuilder to batch into Column containers:
+let mut input = <InputHandle<_, CapacityContainerBuilder<Container>>>::new();
+
+// Operators receive Column<InnerContainer> and borrow it for access:
+.unary(Pipeline, "Split", |_cap, _info| {
+    move |input, output| {
+        input.for_each_time(|time, data| {
+            let mut session = output.session(&time);
+            for container in data {
+                // .borrow() works on any Column variant (Typed, Bytes, or Align):
+                for wc in container.borrow().into_index_iter() {
+                    // wc.text is &str, wc.diff is &i64 — columnar references
+                    session.give(WordCountReference { text: wc.text, diff: wc.diff });
+                }
+            }
+        });
+    }
+})
+```
+
+Exchange uses `ExchangeCore` with a `ColumnBuilder` to re-encode after routing:
+
+```rust
+.unary_frontier(
+    ExchangeCore::<ColumnBuilder<InnerContainer>, _>::new_core(
+        |x: &WordCountReference<&str, &i64>| x.text.len() as u64
+    ),
+    "WordCount",
+    |_cap, _info| { /* frontier-driven operator logic */ }
+)
+```
+
+The derive macro generates `WordCountReference<T, D>` — a struct with borrowed field types used as the columnar `Ref` type.
+Inside operators, `container.borrow().into_index_iter()` yields `WordCountReference<&str, &i64>` values.
+
+### Sending input
+
+Input handles accept columnar references directly:
+
+```rust
+input.send(WordCountReference { text: "hello world", diff: 1 });
+```
+
+The container builder batches these into columnar form automatically.
+
+## Integration with differential dataflow
+
+DD uses columnar containers at a deeper level: as the backing storage for trace batches (arrangements).
+
+### ColumnarLayout
+
+The `ColumnarLayout` type implements DD's `Layout` trait, mapping each column (keys, vals, times, diffs) to a `Coltainer<T>`:
+
+```rust
+pub struct ColumnarLayout<U: ColumnarUpdate> { ... }
+
+impl<U: ColumnarUpdate> Layout for ColumnarLayout<U> {
+    type KeyContainer  = Coltainer<U::Key>;
+    type ValContainer  = Coltainer<U::Val>;
+    type TimeContainer = Coltainer<U::Time>;
+    type DiffContainer = Coltainer<U::Diff>;
+    type OffsetContainer = OffsetList;
+}
+```
+
+### Coltainer
+
+`Coltainer<C>` wraps a `C::Container` and implements DD's `BatchContainer` trait:
+
+```rust
+pub struct Coltainer<C: Columnar> {
+    pub container: C::Container,
+}
+
+impl<C: Columnar + Ord + Clone> BatchContainer for Coltainer<C>
+where for<'a> columnar::Ref<'a, C>: Ord
+{
+    type ReadItem<'a> = columnar::Ref<'a, C>;
+    type Owned = C;
+    // push_ref, push_own, into_owned, clone_onto, clear, ...
+}
+```
+
+The `Ord` bound on `Ref<'a, C>` is required because DD's trace internals use sorted access.
+
+### Trie-shaped batch storage
+
+DD's columnar example defines `KeyStorage` and `ValStorage` types that store batches as a trie with columnar columns:
+
+```rust
+pub struct KeyStorage<U: Update> {
+    pub keys: Column<ContainerOf<U::Key>>,
+    pub upds: Column<Vecs<(ContainerOf<U::Time>, ContainerOf<U::Diff>)>>,
+}
+
+pub struct ValStorage<U: Update> {
+    pub keys: ContainerOf<U::Key>,
+    pub vals: Vecs<ContainerOf<U::Val>>,
+    pub upds: Vecs<(ContainerOf<U::Time>, ContainerOf<U::Diff>)>,
+}
+```
+
+Keys are stored once; for each key, `vals` holds a nested list of values; for each value, `upds` holds `(time, diff)` pairs.
+The `Vecs` bounds arrays track where each key's values start and end.
+
+`form()` constructs the trie from sorted tuples by detecting key/value transitions:
+
+```rust
+let storage = KeyStorage::form(sorted_refs.into_iter());
+```
+
+### Custom exchange (KeyPact)
+
+Standard `Exchange` hashes full records.
+With columnar storage, a custom `KeyPact` + `KeyDistributor` routes by key without round-tripping through tuples:
+
+```rust
+let pact = KeyPact { hashfunc: |k: columnar::Ref<'_, Vec<u8>>| k.hashed() };
+let arranged = arrange_core::<_, _, KeyBatcher<_,_,_>, KeyBuilder<_,_,_>, KeySpine<_,_,_>>(
+    stream, pact, "Data"
+);
+```
+
+The distributor copies keys and their associated updates directly between columnar containers using `extend_from_self`, avoiding deserialization.
+
+### Type aliases for columnar DD
+
+```rust
+type ValSpine<K, V, T, R> = Spine<Rc<OrdValBatch<ColumnarLayout<(K,V,T,R)>>>>;
+type KeySpine<K, T, R>    = Spine<Rc<OrdKeyBatch<ColumnarLayout<(K,T,R)>>>>;
+```
+
+These substitute directly where DD normally uses `ValSpine` / `KeySpine` with the default layout.
 
 ## Abstract data types
 
