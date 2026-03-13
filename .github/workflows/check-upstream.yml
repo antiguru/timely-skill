@@ -1,4 +1,4 @@
-name: Check upstream timely releases
+name: Check upstream releases
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 jobs:
-  check:
+  check-timely:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,8 +34,7 @@ jobs:
           TRACKED: ${{ steps.tracked.outputs.version }}
           UPSTREAM: ${{ steps.upstream.outputs.version }}
         run: |
-          # Check if an issue already exists
-          existing=$(gh issue list --label "upstream-release" --state open --json number --jq 'length')
+          existing=$(gh issue list --label "upstream-release" --state open --search "timely" --json number --jq 'length')
           if [ "$existing" -gt 0 ]; then
             echo "Open issue already exists, skipping."
             exit 0
@@ -56,5 +55,54 @@ jobs:
           * \`timely/src/dataflow/operators/generic/notificator.rs\` — FrontierNotificator
           * \`timely/src/channels/pushers/tee.rs\` — Tee behavior
           * \`container/src/lib.rs\` — CapacityContainerBuilder
+          EOF
+          )"
+
+  check-differential:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get tracked version
+        id: tracked
+        run: |
+          version=$(grep -oP 'differential-dataflow v\K[0-9]+\.[0-9]+' skills/writing-differential-operators/SKILL.md | head -1)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Get latest crates.io version
+        id: upstream
+        run: |
+          version=$(curl -s https://crates.io/api/v1/crates/differential-dataflow | jq -r '.crate.max_stable_version')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue if version changed
+        if: ${{ !startsWith(steps.upstream.outputs.version, steps.tracked.outputs.version) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKED: ${{ steps.tracked.outputs.version }}
+          UPSTREAM: ${{ steps.upstream.outputs.version }}
+        run: |
+          existing=$(gh issue list --label "upstream-release" --state open --search "differential" --json number --jq 'length')
+          if [ "$existing" -gt 0 ]; then
+            echo "Open issue already exists, skipping."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Update skill for differential-dataflow ${UPSTREAM}" \
+            --label "upstream-release" \
+            --body "$(cat <<EOF
+          [differential-dataflow ${UPSTREAM}](https://crates.io/crates/differential-dataflow/${UPSTREAM}) is available on crates.io.
+          The writing-differential-operators skill currently targets **v${TRACKED}**.
+
+          Files to diff against the skill:
+          * \`differential-dataflow/src/collection.rs\` — Collection type, high-level methods
+          * \`differential-dataflow/src/operators/reduce.rs\` — reduce_trace
+          * \`differential-dataflow/src/operators/join.rs\` — join_core, join_traces
+          * \`differential-dataflow/src/operators/arrange/arrangement.rs\` — Arranged, arrange_core
+          * \`differential-dataflow/src/trace/mod.rs\` — Trace, BatchReader, Cursor traits
+          * \`differential-dataflow/src/operators/iterate.rs\` — iterate, Variable
+          * \`differential-dataflow/src/difference.rs\` — Semigroup, Abelian, Multiply
+          * \`dogsdogsdogs/src/operators/half_join.rs\` — delta join operators
           EOF
           )"
