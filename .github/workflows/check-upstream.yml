@@ -13,6 +13,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - crate: timely
@@ -80,14 +81,13 @@ jobs:
             exit 0
           fi
 
-          gh issue create \
-            --title "Update skill for ${CRATE} ${UPSTREAM}" \
-            --label "upstream-release" \
-            --body "$(cat <<EOF
-          [${CRATE} ${UPSTREAM}](https://crates.io/crates/${CRATE}/${UPSTREAM}) is available on crates.io.
+          BODY="[${CRATE} ${UPSTREAM}](https://crates.io/crates/${CRATE}/${UPSTREAM}) is available on crates.io.
           The skill currently targets **v${TRACKED}**.
 
           Files to diff against the skill:
-          ${FILES}
-          EOF
-          )"
+          ${FILES}"
+
+          gh issue create \
+            --title "Update skill for ${CRATE} ${UPSTREAM}" \
+            --label "upstream-release" \
+            --body "${BODY}"
