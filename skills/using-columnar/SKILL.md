@@ -175,6 +175,7 @@ pub struct Vecs<TC, BC = Vec<u64>> {
 ```
 
 `Vec<T>` becomes `Vecs<T::Container>`.
+`[T; N]` (const generics) and `smallvec::SmallVec<[T; N]>` also map to `Vecs<T::Container>`.
 Inner elements are flattened into a single container; bounds track where each inner vec starts and ends.
 `Ref` is `Slice<Borrowed<'a>>` — a view into the flattened container.
 Nesting works recursively: `Vec<Vec<String>>` becomes `Vecs<Vecs<Strings>>`.
