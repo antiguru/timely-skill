@@ -1,8 +1,14 @@
 {
   "name": "timely-skill",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Skills for writing timely dataflow and differential dataflow operators",
   "repository": "https://github.com/antiguru/timely-skill",
   "license": "MIT OR Apache-2.0",
-  "keywords": ["timely", "dataflow", "differential-dataflow", "rust", "columnar"]
+  "keywords": [
+    "timely",
+    "dataflow",
+    "differential-dataflow",
+    "rust",
+    "columnar"
+  ]
 }

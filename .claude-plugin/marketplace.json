@@ -8,25 +8,41 @@
       "name": "timely-skill",
       "source": "./skills/writing-timely-operators",
       "description": "Skills for writing timely dataflow and differential dataflow operators",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "license": "MIT OR Apache-2.0",
-      "keywords": ["timely", "dataflow", "differential-dataflow", "rust"]
+      "keywords": [
+        "timely",
+        "dataflow",
+        "differential-dataflow",
+        "rust"
+      ]
     },
     {
       "name": "differential-skill",
       "source": "./skills/writing-differential-operators",
       "description": "Skills for writing differential dataflow operators and working with columnar data",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "license": "MIT OR Apache-2.0",
-      "keywords": ["differential-dataflow", "columnar", "arrangement", "trace", "rust"]
+      "keywords": [
+        "differential-dataflow",
+        "columnar",
+        "arrangement",
+        "trace",
+        "rust"
+      ]
     },
     {
       "name": "columnar-skill",
       "source": "./skills/using-columnar",
       "description": "Skill for working with the columnar crate for struct-of-arrays data layout",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "license": "MIT OR Apache-2.0",
-      "keywords": ["columnar", "struct-of-arrays", "serialization", "rust"]
+      "keywords": [
+        "columnar",
+        "struct-of-arrays",
+        "serialization",
+        "rust"
+      ]
     }
   ]
 }
