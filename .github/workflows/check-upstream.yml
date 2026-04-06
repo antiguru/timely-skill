@@ -58,16 +58,26 @@ jobs:
         id: tracked
         run: |
           version=$(grep -oP '${{ matrix.pattern }}' '${{ matrix.skill }}' | head -1)
+          if [ -z "$version" ]; then
+            echo "::error::Could not extract tracked version from ${{ matrix.skill }}"
+            exit 1
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Get latest crates.io version
         id: upstream
         run: |
-          version=$(curl -s 'https://crates.io/api/v1/crates/${{ matrix.crate }}' | jq -r '.crate.max_stable_version')
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          response=$(curl -sf 'https://crates.io/api/v1/crates/${{ matrix.crate }}')
+          version=$(echo "$response" | jq -r '.crate.max_stable_version // empty')
+          if [ -z "$version" ]; then
+            echo "::warning::Could not determine latest stable version for ${{ matrix.crate }}"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Open issue if version changed
-        if: ${{ !startsWith(steps.upstream.outputs.version, steps.tracked.outputs.version) }}
+        if: steps.upstream.outputs.skip != 'true' && !startsWith(steps.upstream.outputs.version, steps.tracked.outputs.version)
         env:
           GH_TOKEN: ${{ github.token }}
           CRATE: ${{ matrix.crate }}
