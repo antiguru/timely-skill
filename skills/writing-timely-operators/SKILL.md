@@ -135,8 +135,8 @@ input.for_each_time(|time, data| {
 **`for_each`**: Calls your closure once per (capability, container) pair, without grouping.
 Use only when you do not need to create output sessions (e.g., stashing into a buffer).
 
-**`next()`**: Returns `Option<(InputCapability<T>, &mut C)>` one batch at a time.
-Use when you need early exit or custom control flow.
+**`next()`** (private in v0.28): No longer available as public API.
+Use `for_each` or `for_each_time` instead.
 
 After draining, if the operator needs to defer work (because the frontier has not advanced far enough), stash the data in operator-local state keyed by timestamp.
 
@@ -163,7 +163,8 @@ Use `stash.retain(|_cap, data| !data.is_empty())` after emitting to clean up.
 
 **Downgrading.** `cap.downgrade(&new_time)` replaces a capability with one at a later time (in-place).
 `cap.delayed(&new_time)` creates a new capability without consuming the original.
-Both require `new_time >= cap.time()`.
+Both require `new_time >= cap.time()` and panic otherwise.
+Non-panicking variants `try_downgrade` and `try_delayed` return `Result`/`Option` instead.
 
 **`CapabilitySet`** (in `capability.rs`): Manages a set of incomparable capabilities for partial-order timestamps.
 Maintains the minimal antichain. Use `insert()` to add, `downgrade()` to advance the entire set.
