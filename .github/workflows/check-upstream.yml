@@ -67,7 +67,8 @@ jobs:
       - name: Get latest crates.io version
         id: upstream
         run: |
-          response=$(curl -sf 'https://crates.io/api/v1/crates/${{ matrix.crate }}') || true
+          response=$(curl -sf -H 'User-Agent: timely-skill CI (github.com/antiguru/timely-skill)' \
+            'https://crates.io/api/v1/crates/${{ matrix.crate }}') || true
           version=$(echo "$response" | jq -r '.crate.max_stable_version // empty')
           if [ -z "$version" ]; then
             echo "::warning::Could not determine latest stable version for ${{ matrix.crate }}"
