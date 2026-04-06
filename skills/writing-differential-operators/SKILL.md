@@ -36,7 +36,9 @@ An update `(d, t, +1)` followed by `(d, t, -1)` cancels out — `d` was never lo
 
 ## High-level operators
 
-All operators below are methods on `Collection` or extension traits imported from `differential_dataflow::operators`.
+In v0.21, high-level operators (`join`, `reduce`, `arrange_by_key`, etc.) are methods directly on `Collection` — the separate `Join`, `JoinCore`, `Reduce`, `ArrangeByKey`, `ArrangeBySelf` extension traits from earlier versions are removed.
+
+All operators below are methods on `Collection`.
 
 ### Transforms
 
@@ -109,13 +111,17 @@ An arrangement is a persistent, indexed representation of a collection.
 Multiple operators can share the same arrangement, avoiding redundant storage and computation.
 
 ```rust
-pub struct Arranged<G, Tr> {
+pub struct Arranged<G, Tr>
+where
+    G: Scope<Timestamp: Lattice + Ord>,
+    Tr: TraceReader + Clone,
+{
     pub stream: Stream<G, Vec<Tr::Batch>>,
     pub trace: Tr,
 }
 ```
 
-The `stream` carries new batches as they arrive.
+The `stream` carries vectors of new batches as they arrive.
 The `trace` is a shared handle (`TraceAgent`) to the accumulated, indexed history.
 
 ### Creating arrangements
@@ -230,27 +236,31 @@ The high-level `arrange_by_key` picks sensible defaults.
 ### Trace hierarchy
 
 ```
-TraceReader
-  └── Trace (extends with insert, close, exert)
-
-BatchReader
-  └── Batch (extends with Merger for progressive merging)
-
-Cursor (navigation over keys → values → (time, diff) triples)
+LayoutExt (GAT-based key/val/time/diff access)
+  ├── TraceReader (extends with cursor, compaction, batches)
+  │     └── Trace (extends with insert, close, exert)
+  ├── BatchReader (extends with cursor, description)
+  │     └── Batch (extends with Merger for progressive merging)
+  └── Cursor (navigation over keys → values → (time, diff) triples)
 ```
+
+All traits in this hierarchy extend `LayoutExt`, which provides GAT-based associated types:
+`Key<'a>`, `Val<'a>`, `TimeGat<'a>`, `DiffGat<'a>` — borrowed views that enable zero-copy access to columnar storage.
+Owned types are available as `KeyOwn`, `ValOwn`, `Time`, `Diff`.
 
 ### Cursor navigation
 
-A cursor walks sorted `(key, val, time, diff)` entries hierarchically:
+A cursor walks sorted `(key, val, time, diff)` entries hierarchically.
+All accessors return GAT references (`Key<'a>`, `Val<'a>`), not owned values:
 
 ```rust
 let (mut cursor, storage) = trace.cursor();
 while cursor.key_valid(&storage) {
-    let key = cursor.get_key(&storage).unwrap();
+    let key = cursor.key(&storage);       // returns Key<'_> (borrowed)
     while cursor.val_valid(&storage) {
-        let val = cursor.get_val(&storage).unwrap();
+        let val = cursor.val(&storage);   // returns Val<'_> (borrowed)
         cursor.map_times(&storage, |time, diff| {
-            // process (key, val, time, diff)
+            // time: TimeGat<'_>, diff: DiffGat<'_>
         });
         cursor.step_val(&storage);
     }
@@ -284,6 +294,7 @@ let result = collection.iterate(|scope, inner| {
 ```
 
 The `Variable` type manages the feedback loop.
+`Variable::new` returns a `(Variable, Collection)` pair — the collection is the loop output.
 `set()` binds the variable's definition.
 Multiple variables enable mutual recursion.
 
@@ -294,15 +305,17 @@ Inside the iterative scope, the feedback edge has summary `Product::new(Default:
 
 ## Difference algebra
 
-DD's difference type `R` must satisfy algebraic properties depending on the operators used:
+DD's difference type `R` must satisfy algebraic properties depending on the operators used.
+`IsZero` is a standalone trait; the others form a chain: `Semigroup` → `Monoid` → `Abelian`.
+`Semigroup` accepts a generic `Rhs` parameter (defaulting to `Self`) for heterogeneous addition.
 
 | Trait | Requires | Needed by |
 |---|---|---|
-| `IsZero` | Test for zero | All operators (zero diffs are dropped) |
-| `Semigroup` | `plus_equals(&mut self, &Rhs)` | All operators (compaction) |
-| `Monoid` | Semigroup + default zero | Most operators |
-| `Abelian` | Monoid + `negate(&mut self)` | `negate`, `distinct`, retractions |
-| `Multiply` | `multiply(self, &Rhs) -> Output` | `join` (diff = R1 * R2) |
+| `IsZero` | `fn is_zero(&self) -> bool` | All operators (zero diffs are dropped) |
+| `Semigroup<Rhs>` | `Clone + IsZero + plus_equals(&mut self, &Rhs)` | All operators (compaction) |
+| `Monoid` | `Semigroup + fn zero() -> Self` | Most operators |
+| `Abelian` | `Monoid + fn negate(&mut self)` | `negate`, `distinct`, retractions |
+| `Multiply<Rhs>` | `fn multiply(self, &Rhs) -> Output` | `join` (diff = R1 * R2) |
 
 The default `isize` satisfies all of these.
 Custom difference types (e.g., lattice-valued) need only implement the traits required by the operators they appear in.
