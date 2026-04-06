@@ -1,0 +1,71 @@
+name: Bump version and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get current version
+        id: current
+        run: |
+          version=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next version
+        id: next
+        run: |
+          IFS='.' read -r major minor patch <<< "${{ steps.current.outputs.version }}"
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          version="${major}.${minor}.${patch}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Bumping ${{ steps.current.outputs.version }} → $version"
+
+      - name: Update version in all plugin files
+        env:
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+          NEW_VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          files=(
+            .claude-plugin/marketplace.json
+            skills/writing-timely-operators/.claude-plugin/plugin.json
+            skills/writing-differential-operators/.claude-plugin/plugin.json
+            skills/using-columnar/.claude-plugin/plugin.json
+          )
+          for f in "${files[@]}"; do
+            jq --arg v "$NEW_VERSION" '
+              if .plugins then .plugins[].version = $v
+              else .version = $v
+              end
+            ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release v${{ steps.next.outputs.version }}"
+          git tag "v${{ steps.next.outputs.version }}"
+          git push origin HEAD "v${{ steps.next.outputs.version }}"
