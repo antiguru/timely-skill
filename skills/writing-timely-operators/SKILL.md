@@ -10,7 +10,7 @@ description: >
 
 # Writing timely dataflow operators
 
-This skill targets **timely v0.27**.
+This skill targets **timely v0.28**.
 API details (especially closure signatures and container traits) may differ in other versions — check source files when in doubt.
 
 This skill covers the patterns for writing correct and efficient custom operators in timely dataflow.
@@ -97,6 +97,18 @@ let input = builder.new_input_connection(&stream, Pipeline,
     vec![(1, Antichain::from_elem(1))]
 );
 ```
+
+**Frontier interest control**: By default, an operator is rescheduled whenever any input frontier changes.
+`set_notify_for(input, interest)` on `OperatorBuilder` controls this per input with a `FrontierInterest` enum:
+
+| Variant | Behavior |
+|---|---|
+| `FrontierInterest::Always` | Reschedule on every frontier change (default) |
+| `FrontierInterest::IfCapability` | Reschedule only while the operator holds capabilities |
+| `FrontierInterest::Never` | Never reschedule for frontier changes on this input |
+
+`IfCapability` enables lazy scheduling: the operator sleeps when it has no outstanding work and wakes only when new input arrives or when it holds capabilities and the frontier moves.
+This reduces overhead for operators that are idle most of the time.
 
 ## Input draining
 
@@ -197,7 +209,7 @@ If you skip the `retain`, dropped entries still hold capabilities, blocking down
 You call `notificator.notify_at(cap)` when stashing, and later iterate ready notifications:
 
 ```
-notificator.for_each(&[frontier], |cap, _count, _not| {
+notificator.for_each(&[frontier], |cap, _not| {
     if let Some(data) = stash.remove(cap.time()) {
         output.session(&cap).give_iterator(data.into_iter());
     }

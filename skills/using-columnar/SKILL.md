@@ -11,11 +11,12 @@ description: >
 
 # Using the columnar crate
 
-This skill targets **columnar v0.11**.
+This skill targets **columnar v0.12**.
 API details may differ in other versions — check `frankmcsherry/columnar` source when in doubt.
 
 Columnar transforms arrays of complex structs into structs of simple arrays (AoS → SoA).
 The result is fewer heap allocations, better cache locality, and zero-copy serialization to bytes.
+The crate supports `no_std` environments (with `alloc`).
 
 ## Core concept
 
@@ -44,6 +45,7 @@ pub trait Columnar: 'static {
 
 Key type aliases:
 * `ContainerOf<T>` = `<T as Columnar>::Container` — the columnar storage type for `T`
+* `BorrowedOf<'a, T>` = `<ContainerOf<T> as Borrow>::Borrowed<'a>` — the lightweight borrowed view type
 * `Ref<'a, T>` = `<ContainerOf<T> as Borrow>::Ref<'a>` — the reference type when indexing into a container
 
 `as_columns` converts `&[T]` into a columnar container.
@@ -160,7 +162,8 @@ pub struct Strings<BC = Vec<u64>, VC = Vec<u8>> {
 
 All strings are concatenated into a single byte buffer.
 `bounds` stores cumulative byte offsets for O(1) access to each string.
-`Ref` is `&str`.
+`Ref` is `&[u8]` (raw bytes, not `&str`) to avoid UTF-8 validation on the critical read path.
+Use the convenience method `get_str(index)` when you need a validated `&str`.
 
 ### Vecs (nested lists)
 
@@ -200,7 +203,9 @@ pub struct Options<TC> {
 `RankSelect` is a bit vector with O(1) rank queries (count of set bits up to a position).
 When accessing element `i`, the container checks the discriminant bit and uses `rank(i)` to compute the offset into the appropriate variant's sub-container.
 
-Custom enums use the derive macro, which generates a similar discriminant + per-variant container layout.
+Custom enums use the derive macro, which generates a `Discriminant`-based layout with per-variant containers.
+When all elements share the same variant (homogeneous), the `Discriminant` avoids storing per-element tags and offsets — only the variant tag and count are stored.
+`Discriminant::is_heterogeneous()` returns `true` when elements have mixed variants and per-element metadata is present.
 
 ## Compression containers
 
@@ -246,16 +251,12 @@ The wire format (`Indexed`) stores:
 Primitive columns serialize as direct byte casts (`bytemuck`).
 Composite containers (tuples, vecs, strings) recursively serialize each sub-container.
 
-## HeapSize
+**`DecodedStore`**: A zero-allocation random-access view into indexed-encoded data.
+It provides constant-time field access regardless of tuple width, replacing the legacy `from_u64s` / `decode_u64s` decoding methods.
+Derived types support a `from_store` constructor for structured decoding.
 
-```rust
-pub trait HeapSize {
-    fn heap_size(&self) -> (usize, usize);  // (active_bytes, allocated_bytes)
-}
-```
-
-Reports memory usage for profiling.
-`active_bytes` is the bytes actually used; `allocated_bytes` includes spare capacity.
+**`Stash`**: A container that accumulates byte-serialized data for deferred decoding.
+Use `Stash::try_from_bytes` to validate and construct from raw bytes.
 
 ## Slice and iteration
 
@@ -348,7 +349,7 @@ let mut input = <InputHandle<_, CapacityContainerBuilder<Container>>>::new();
             for container in data {
                 // .borrow() works on any Column variant (Typed, Bytes, or Align):
                 for wc in container.borrow().into_index_iter() {
-                    // wc.text is &str, wc.diff is &i64 — columnar references
+                    // wc.text is &[u8], wc.diff is &i64 — columnar references
                     session.give(WordCountReference { text: wc.text, diff: wc.diff });
                 }
             }
@@ -362,7 +363,7 @@ Exchange uses `ExchangeCore` with a `ColumnBuilder` to re-encode after routing:
 ```rust
 .unary_frontier(
     ExchangeCore::<ColumnBuilder<InnerContainer>, _>::new_core(
-        |x: &WordCountReference<&str, &i64>| x.text.len() as u64
+        |x: &WordCountReference<&[u8], &i64>| x.text.len() as u64
     ),
     "WordCount",
     |_cap, _info| { /* frontier-driven operator logic */ }
@@ -370,7 +371,8 @@ Exchange uses `ExchangeCore` with a `ColumnBuilder` to re-encode after routing:
 ```
 
 The derive macro generates `WordCountReference<T, D>` — a struct with borrowed field types used as the columnar `Ref` type.
-Inside operators, `container.borrow().into_index_iter()` yields `WordCountReference<&str, &i64>` values.
+Inside operators, `container.borrow().into_index_iter()` yields `WordCountReference<&[u8], &i64>` values.
+Use `get_str(index)` on the underlying `Strings` container when you need validated `&str` instead of raw `&[u8]`.
 
 ### Sending input
 

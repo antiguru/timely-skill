@@ -12,7 +12,7 @@ description: >
 
 # Writing differential dataflow operators
 
-This skill targets **differential-dataflow v0.20** (depends on timely v0.27 and columnar v0.11).
+This skill targets **differential-dataflow v0.21** (depends on timely v0.28 and columnar v0.12).
 API details may differ in other versions — check source files when in doubt.
 
 Differential dataflow builds on timely dataflow.
@@ -149,6 +149,18 @@ let joined = by_key.join_core(&other_arranged, |k, v1, v2| Some((k.clone(), (v1.
 let reduced = by_key.reduce_abelian("sum", |_key, input, output, _updates| {
     output.push((input.iter().map(|(_, r)| r).sum::<isize>(), 1));
 });
+```
+
+**Extracting data from arrangements:**
+
+`as_container` converts batches from an arrangement back into a collection, useful when the batch container type is not `Vec`:
+```rust
+let collection = arranged.as_container(|batch| { /* extract containers from batch */ });
+```
+
+`flat_map_ref` applies a transformation to each `(key, val)` pair in the arrangement without cloning into an intermediate collection:
+```rust
+let mapped = arranged.flat_map_ref(|key, val| Some((key.to_owned(), val.to_owned())));
 ```
 
 ### Trace management
@@ -295,6 +307,10 @@ DD's difference type `R` must satisfy algebraic properties depending on the oper
 The default `isize` satisfies all of these.
 Custom difference types (e.g., lattice-valued) need only implement the traits required by the operators they appear in.
 
+**`Present`**: A zero-sized difference type that represents "this record exists" without tracking multiplicity.
+It implements `IsZero`, `Semigroup`, and `Multiply` but not `Abelian` (no negation).
+Use `Present` when you only need set semantics (present/absent) rather than multiset semantics (counted), saving memory on the diff column.
+
 ## Delta joins (dogsdogsdogs)
 
 The `dogsdogsdogs` crate (published as `differential-dogs3`) provides multi-way join patterns that avoid the quadratic blowup of nested binary joins.
@@ -329,7 +345,7 @@ Key types:
 
 ## Columnar data representation
 
-DD can use columnar containers (from the `columnar` crate v0.11) as backing storage for trace batches.
+DD can use columnar containers (from the `columnar` crate v0.12) as backing storage for trace batches.
 The `ColumnarLayout` type maps each column (keys, vals, times, diffs) to columnar storage, and `Coltainer<C>` wraps a columnar container to implement DD's `BatchContainer` trait.
 
 For the full columnar API (traits, derive macro, container types, serialization), see the `using-columnar` skill.
