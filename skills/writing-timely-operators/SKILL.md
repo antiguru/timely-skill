@@ -10,11 +10,27 @@ description: >
 
 # Writing timely dataflow operators
 
-This skill targets **timely v0.28**.
+This skill targets **timely v0.29**.
 API details (especially closure signatures and container traits) may differ in other versions — check source files when in doubt.
 
 This skill covers the patterns for writing correct and efficient custom operators in timely dataflow.
 When writing an operator, read the relevant section below, then check the source files it references for the current API signatures.
+
+## Scope type
+
+In v0.29, `Scope<'scope, T>` is a concrete `Copy` struct, not a trait.
+Code that was generic over `G: Scope` in earlier versions now uses `Scope<'scope, T>` with an explicit lifetime and timestamp parameter.
+`Child<'scope, G, T>` is removed — use `Scope<'scope, T>` directly.
+
+Dataflow closures receive the scope by value:
+
+```rust
+worker.dataflow(|scope: Scope<'_, usize>| {
+    // scope is Copy — pass it freely
+});
+```
+
+Access the worker via `scope.worker()` — the `AsWorker` and `Scheduler` traits are removed; their methods are now inherent on `Worker`.
 
 ## All workers must construct the same dataflow graph
 
@@ -70,7 +86,7 @@ For the frontier variants, the logic closure receives input handles paired with 
 For `OperatorBuilder` (in `builder_rc.rs`), you wire inputs and outputs manually:
 
 ```
-let mut builder = OperatorBuilder::new("Name".to_owned(), scope.clone());
+let mut builder = OperatorBuilder::new("Name".to_owned(), scope);
 let mut input = builder.new_input(&stream, Pipeline);
 let (mut output_wrapper, output_stream) = builder.new_output();
 
@@ -258,6 +274,8 @@ This works well for operators that can process all input promptly.
 But if an operator produces far more output than it receives (e.g., `flat_map(|x| 0..x)` on large values), running to completion can flood memory.
 
 **Yielding with `build_reschedule`** (on `OperatorBuilder`): The logic closure returns `bool` — `true` means "schedule me again even without new input."
+In v0.29, `build_reschedule` boxes the closures by default, reducing compile times.
+Use `build_reschedule_typed` for the monomorphized (non-boxed) path when needed.
 This lets you process input incrementally:
 
 ```
@@ -360,19 +378,20 @@ This is a type annotation, not a runtime conversion — it tells the type system
 All built-in timely operators (`filter`, `map`, `inspect`, `exchange`, etc.) are defined as extension traits on `Stream`.
 Follow this pattern to make custom operators feel like first-class methods.
 
-Define a trait parameterized by the scope and constrain it to `Stream`:
+Define a trait parameterized by the scope lifetime and timestamp, and implement it for `Stream`:
 
 ```
 use timely::dataflow::{Scope, Stream};
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::channels::pact::Pipeline;
+use timely::progress::Timestamp;
 
 /// Doubles every record in the stream.
-pub trait DoubleStream<G: Scope, D: Clone + 'static> {
+pub trait DoubleStream<'scope, T: Timestamp, D: Clone + 'static> {
     fn double(self) -> Self;
 }
 
-impl<G: Scope, D: Clone + 'static> DoubleStream<G, D> for Stream<G, Vec<D>> {
+impl<'scope, T: Timestamp, D: Clone + 'static> DoubleStream<'scope, T, D> for Stream<'scope, T, Vec<D>> {
     fn double(self) -> Self {
         self.unary(Pipeline, "Double", |_, _| {
             move |input, output| {
@@ -394,17 +413,17 @@ impl<G: Scope, D: Clone + 'static> DoubleStream<G, D> for Stream<G, Vec<D>> {
 This pattern has a few advantages:
 * Callers chain it naturally: `stream.double().inspect(...)`.
 * The trait can be imported selectively, avoiding name collisions.
-* Scope and timestamp constraints go on the trait or impl, not on every call site.
+* Lifetime and timestamp constraints go on the trait or impl, not on every call site.
 
 For operators that need `OperatorBuilder` (multiple outputs, yielding), the extension trait returns the output stream(s) and hides the builder wiring:
 
 ```
-pub trait ExpandRange<G: Scope> {
-    fn expand_range(self) -> Stream<G, Vec<u64>>;
+pub trait ExpandRange<'scope> {
+    fn expand_range(self) -> Stream<'scope, u64, Vec<u64>>;
 }
 
-impl<G: Scope<Timestamp = u64>> ExpandRange<G> for Stream<G, Vec<u64>> {
-    fn expand_range(self) -> Stream<G, Vec<u64>> {
+impl<'scope> ExpandRange<'scope> for Stream<'scope, u64, Vec<u64>> {
+    fn expand_range(self) -> Stream<'scope, u64, Vec<u64>> {
         let mut builder = OperatorBuilder::new("ExpandRange".to_owned(), self.scope());
         let mut input = builder.new_input(self, Pipeline);
         let (output, stream) = builder.new_output::<Vec<u64>>();
@@ -417,7 +436,7 @@ impl<G: Scope<Timestamp = u64>> ExpandRange<G> for Stream<G, Vec<u64>> {
 For operators that split a stream, return a tuple:
 
 ```
-pub trait SplitOddEven<G: Scope> {
-    fn split_odd_even(self) -> (Stream<G, Vec<u64>>, Stream<G, Vec<u64>>);
+pub trait SplitOddEven<'scope> {
+    fn split_odd_even(self) -> (Stream<'scope, u64, Vec<u64>>, Stream<'scope, u64, Vec<u64>>);
 }
 ```

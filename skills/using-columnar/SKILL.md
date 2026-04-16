@@ -11,7 +11,7 @@ description: >
 
 # Using the columnar crate
 
-This skill targets **columnar v0.12**.
+This skill targets **columnar v0.12.1**.
 API details may differ in other versions — check `frankmcsherry/columnar` source when in doubt.
 
 Columnar transforms arrays of complex structs into structs of simple arrays (AoS → SoA).
