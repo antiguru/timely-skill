@@ -272,8 +272,8 @@ This works well for operators that can process all input promptly.
 But if an operator produces far more output than it receives (e.g., `flat_map(|x| 0..x)` on large values), running to completion can flood memory.
 
 **Yielding with `build_reschedule`** (on `OperatorBuilder`): The logic closure returns `bool` — `true` means "schedule me again even without new input."
-In v0.29, `build_reschedule` boxes the closures by default, reducing compile times.
-Use `build_reschedule_typed` for the monomorphized (non-boxed) path when needed.
+`build_reschedule` boxes the closures by default, reducing compile times.
+`build_reschedule_typed` provides the monomorphized (non-boxed) path when needed.
 This lets you process input incrementally:
 
 ```
