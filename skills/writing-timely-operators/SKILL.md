@@ -18,9 +18,7 @@ When writing an operator, read the relevant section below, then check the source
 
 ## Scope type
 
-In v0.29, `Scope<'scope, T>` is a concrete `Copy` struct, not a trait.
-Code that was generic over `G: Scope` in earlier versions now uses `Scope<'scope, T>` with an explicit lifetime and timestamp parameter.
-`Child<'scope, G, T>` is removed — use `Scope<'scope, T>` directly.
+`Scope<'scope, T>` is a concrete `Copy` struct with an explicit lifetime and timestamp parameter.
 
 Dataflow closures receive the scope by value:
 
@@ -30,7 +28,7 @@ worker.dataflow(|scope: Scope<'_, usize>| {
 });
 ```
 
-Access the worker via `scope.worker()` — the `AsWorker` and `Scheduler` traits are removed; their methods are now inherent on `Worker`.
+Access the worker via `scope.worker()`. Worker methods like `logging()` and `config()` are inherent on `Worker`.
 
 ## All workers must construct the same dataflow graph
 

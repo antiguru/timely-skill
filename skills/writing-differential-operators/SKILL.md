@@ -36,7 +36,7 @@ An update `(d, t, +1)` followed by `(d, t, -1)` cancels out — `d` was never lo
 
 ## High-level operators
 
-High-level operators (`join`, `reduce`, `arrange_by_key`, etc.) are methods directly on `Collection` — the separate `Join`, `JoinCore`, `Reduce`, `ArrangeByKey`, `ArrangeBySelf` extension traits from earlier versions are removed.
+High-level operators (`join`, `reduce`, `arrange_by_key`, etc.) are methods directly on `Collection`.
 
 All operators below are methods on `Collection`.
 
