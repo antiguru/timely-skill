@@ -2,6 +2,21 @@
 
 This repo contains Claude Code skills for writing timely dataflow and differential dataflow operators.
 
+## Writing style
+
+* Use a concise, technical writing style.
+* Avoid filler words, use active voice.
+* Only make claims based on evidence.
+  If there's no evidence, ask what to do.
+
+## Markdown formatting
+
+* Use the asterisk `*` for lists, not dash `-`.
+* Put each sentence on its own line.
+* Capitalization of headers: first word upper case, and after colon.
+  Uppercase proper nouns, but no other words.
+* When changing code, do not drop comments.
+
 ## Skill content style
 
 * Skills are API references for the current version. Not migration guides.
