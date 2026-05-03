@@ -12,7 +12,7 @@ description: >
 
 # Writing differential dataflow operators
 
-This skill targets **differential-dataflow v0.21** (depends on timely v0.28 and columnar v0.12).
+This skill targets **differential-dataflow v0.23** (depends on timely v0.29 and columnar v0.12).
 API details may differ in other versions — check source files when in doubt.
 
 Differential dataflow builds on timely dataflow.
@@ -22,21 +22,21 @@ For timely-level operator construction (capabilities, frontiers, draining), see 
 ## The Collection type
 
 ```rust
-pub struct Collection<G: Scope, C: 'static> {
-    pub inner: Stream<G, C>,
+pub struct Collection<'scope, T: Timestamp, C: 'static> {
+    pub inner: Stream<'scope, T, C>,
 }
 ```
 
 A `Collection` wraps a timely `Stream`.
-The container type `C` is typically `Vec<(D, G::Timestamp, R)>` where `D` is the data, and `R` is the difference type (usually `isize`).
-The shorthand `VecCollection<G, D, R>` refers to `Collection<G, Vec<(D, G::Timestamp, R)>>`.
+The container type `C` is typically `Vec<(D, T, R)>` where `D` is the data, and `R` is the difference type (usually `isize`).
+The shorthand `VecCollection<'scope, T, D, R>` refers to `Collection<'scope, T, Vec<(D, T, R)>>`.
 
 `+1` means an insertion, `-1` a retraction.
 An update `(d, t, +1)` followed by `(d, t, -1)` cancels out — `d` was never logically present at time `t`.
 
 ## High-level operators
 
-In v0.21, high-level operators (`join`, `reduce`, `arrange_by_key`, etc.) are methods directly on `Collection` — the separate `Join`, `JoinCore`, `Reduce`, `ArrangeByKey`, `ArrangeBySelf` extension traits from earlier versions are removed.
+High-level operators (`join`, `reduce`, `arrange_by_key`, etc.) are methods directly on `Collection`.
 
 All operators below are methods on `Collection`.
 
@@ -62,7 +62,7 @@ Do not over-consolidate — each call is an exchange + sort.
 
 ### Keyed operators
 
-These operate on `Collection<G, Vec<((K, V), T, R)>>` — collections of key-value pairs.
+These operate on `Collection<'scope, T, Vec<((K, V), T, R)>>` — collections of key-value pairs.
 
 **`reduce`**: Per-key aggregation.
 ```rust
@@ -79,8 +79,8 @@ It must be deterministic — DD calls it repeatedly to compute retractions when 
 
 **`join`** / **`join_map`**: Equijoin on key.
 ```rust
-left.join(&right)  // -> Collection<G, (K, (V1, V2)), R>
-left.join_map(&right, |key, v1, v2| result)  // -> Collection<G, D, R>
+left.join(&right)  // -> VecCollection<'scope, T, (K, (V1, V2)), R>
+left.join_map(&right, |key, v1, v2| result)  // -> VecCollection<'scope, T, D, R>
 ```
 
 Internally, `join` arranges both inputs by key, then calls `join_core`.
@@ -111,12 +111,11 @@ An arrangement is a persistent, indexed representation of a collection.
 Multiple operators can share the same arrangement, avoiding redundant storage and computation.
 
 ```rust
-pub struct Arranged<G, Tr>
+pub struct Arranged<'scope, Tr>
 where
-    G: Scope<Timestamp: Lattice + Ord>,
     Tr: TraceReader + Clone,
 {
-    pub stream: Stream<G, Vec<Tr::Batch>>,
+    pub stream: Stream<'scope, Tr::Time, Vec<Tr::Batch>>,
     pub trace: Tr,
 }
 ```
@@ -191,21 +190,27 @@ Use these when you already have an arrangement to avoid redundant re-arrangement
 ### `reduce_trace`
 
 ```rust
-pub fn reduce_trace<G, T1, Bu, T2, L>(
-    trace: Arranged<G, T1>,
+pub fn reduce_trace<'scope, Tr1, Bu, Tr2, L, P>(
+    trace: Arranged<'scope, Tr1>,
     name: &str,
     logic: L,
-) -> Arranged<G, TraceAgent<T2>>
+    push: P,
+) -> Arranged<'scope, TraceAgent<Tr2>>
 ```
 
 The logic closure signature:
 ```rust
 FnMut(
-    T1::Key<'_>,                       // key
-    &[(T1::Val<'_>, T1::Diff)],        // consolidated input values + diffs
-    &mut Vec<(T2::ValOwn, T2::Diff)>,  // output buffer
-    &mut Vec<(T2::ValOwn, T2::Diff)>,  // update buffer (for retractions)
+    Tr1::Key<'_>,                       // key
+    &[(Tr1::Val<'_>, Tr1::Diff)],       // consolidated input values + diffs
+    &mut Vec<(Tr2::ValOwn, Tr2::Diff)>, // output buffer
+    &mut Vec<(Tr2::ValOwn, Tr2::Diff)>, // update buffer (for retractions)
 )
+```
+
+The `push` closure packs key + value updates into the builder input, decoupling the packing strategy from the reduce implementation:
+```rust
+P: FnMut(&mut Bu::Input, Tr1::Key<'_>, &mut Vec<(Tr2::ValOwn, Tr2::Time, Tr2::Diff)>)
 ```
 
 Returns an `Arranged` — the output is itself an arrangement, usable as input to further core operators.
@@ -221,11 +226,11 @@ For maximum control, `join_core_internal_unsafe` gives the closure direct cursor
 ### `arrange_core`
 
 ```rust
-pub fn arrange_core<G, P, Ba, Bu, Tr>(
-    stream: Stream<G, Ba::Input>,
+pub fn arrange_core<'scope, P, Ba, Bu, Tr>(
+    stream: Stream<'scope, Tr::Time, Ba::Input>,
     pact: P,
     name: &str,
-) -> Arranged<G, TraceAgent<Tr>>
+) -> Arranged<'scope, TraceAgent<Tr>>
 ```
 
 Parameterized by batcher (`Ba`), builder (`Bu`), and trace (`Tr`) types.
@@ -288,7 +293,7 @@ let result = collection.iterate(|scope, inner| {
     // Fixed point when no new updates are produced.
     inner
         .map(|x| step(x))
-        .concat(&input.enter(&scope))
+        .concat(&input.enter(scope))
         .distinct()
 });
 ```
@@ -300,8 +305,9 @@ Multiple variables enable mutual recursion.
 
 Inside the iterative scope, the feedback edge has summary `Product::new(Default::default(), 1)` — each iteration increments the inner timestamp by 1.
 
-**`enter` / `leave`**: `enter` wraps each timestamp in `Product<T, u64>` with inner = 0.
-`leave` strips the inner coordinate.
+**`enter` / `leave`**: `enter(scope)` wraps each timestamp in `Product<T, u64>` with inner = 0.
+`leave(outer_scope)` strips the inner coordinate.
+Both take the target scope by value (`Scope` is `Copy`).
 
 ## Difference algebra
 
@@ -331,13 +337,13 @@ The `dogsdogsdogs` crate (published as `differential-dogs3`) provides multi-way 
 ### half_join
 
 ```rust
-pub fn half_join<G, K, V, R, Tr, FF, CF, DOut, S>(
-    stream: VecCollection<G, (K, V, G::Timestamp), R>,
-    arrangement: Arranged<G, Tr>,
+pub fn half_join<'scope, K, V, R, Tr, FF, CF, DOut, S>(
+    stream: VecCollection<'scope, Tr::Time, (K, V, Tr::Time), R>,
+    arrangement: Arranged<'scope, Tr>,
     frontier_func: FF,
     comparison: CF,
     output_func: S,
-) -> VecCollection<G, (DOut, G::Timestamp), <R as Mul<Tr::Diff>>::Output>
+) -> VecCollection<'scope, Tr::Time, (DOut, Tr::Time), <R as Mul<Tr::Diff>>::Output>
 ```
 
 A half join matches updates from one stream against an arrangement where the arranged data's timestamp satisfies a comparison function under a total order on time.
