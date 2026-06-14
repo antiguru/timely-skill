@@ -10,7 +10,7 @@ description: >
 
 # Writing timely dataflow operators
 
-This skill targets **timely v0.29**.
+This skill targets **timely v0.30**.
 API details (especially closure signatures and container traits) may differ in other versions — check source files when in doubt.
 
 This skill covers the patterns for writing correct and efficient custom operators in timely dataflow.
@@ -149,7 +149,7 @@ input.for_each_time(|time, data| {
 **`for_each`**: Calls your closure once per (capability, container) pair, without grouping.
 Use only when you do not need to create output sessions (e.g., stashing into a buffer).
 
-**`next()`** (private in v0.28): No longer available as public API.
+**`next()`**: Private, not public API.
 Use `for_each` or `for_each_time` instead.
 
 After draining, if the operator needs to defer work (because the frontier has not advanced far enough), stash the data in operator-local state keyed by timestamp.

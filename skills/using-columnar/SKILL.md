@@ -11,7 +11,7 @@ description: >
 
 # Using the columnar crate
 
-This skill targets **columnar v0.12.1**.
+This skill targets **columnar v0.13.0**.
 API details may differ in other versions — check `frankmcsherry/columnar` source when in doubt.
 
 Columnar transforms arrays of complex structs into structs of simple arrays (AoS → SoA).
@@ -236,14 +236,21 @@ Containers implement `AsBytes` and `FromBytes` for zero-copy-friendly serializat
 
 ```rust
 pub trait AsBytes<'a> {
-    fn as_bytes(&self) -> impl Iterator<Item = (u64, &'a [u8])>;
+    const SLICE_COUNT: usize;
+    fn get_byte_slice(&self, index: usize) -> (u64, &'a [u8]);
+    fn as_bytes(&self) -> impl Iterator<Item = (u64, &'a [u8])> {
+        (0..Self::SLICE_COUNT).map(|i| self.get_byte_slice(i))
+    }
 }
 
 pub trait FromBytes<'a> {
+    const SLICE_COUNT: usize;
     fn from_bytes(bytes: &mut impl Iterator<Item = &'a [u8]>) -> Self;
 }
 ```
 
+`AsBytes` is random-access: implementors provide `SLICE_COUNT` and `get_byte_slice(index)`, and `as_bytes` iterates the slices by default.
+Because `SLICE_COUNT` is a compile-time constant, the encoder indexes slices by position and LLVM constant-folds the dispatch.
 Each `(u64, &[u8])` pair is an alignment hint and a byte slice.
 The wire format (`Indexed`) stores:
 1. An offset table (u64 per slice) for O(1) random access.
@@ -253,7 +260,7 @@ Primitive columns serialize as direct byte casts (`bytemuck`).
 Composite containers (tuples, vecs, strings) recursively serialize each sub-container.
 
 **`DecodedStore`**: A zero-allocation random-access view into indexed-encoded data.
-It provides constant-time field access regardless of tuple width, replacing the legacy `from_u64s` / `decode_u64s` decoding methods.
+It provides constant-time field access regardless of tuple width.
 Derived types support a `from_store` constructor for structured decoding.
 
 **`Stash`**: A container that accumulates byte-serialized data for deferred decoding.
@@ -458,7 +465,7 @@ With columnar storage, a custom `KeyPact` + `KeyDistributor` routes by key witho
 
 ```rust
 let pact = KeyPact { hashfunc: |k: columnar::Ref<'_, Vec<u8>>| k.hashed() };
-let arranged = arrange_core::<_, _, KeyBatcher<_,_,_>, KeyBuilder<_,_,_>, KeySpine<_,_,_>>(
+let arranged = arrange_core::<_, _, _, KeyBatcher<_,_,_>, KeyBuilder<_,_,_>, KeySpine<_,_,_>>(
     stream, pact, "Data"
 );
 ```
