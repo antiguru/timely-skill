@@ -12,7 +12,7 @@ description: >
 
 # Writing differential dataflow operators
 
-This skill targets **differential-dataflow v0.23** (depends on timely v0.29 and columnar v0.12).
+This skill targets **differential-dataflow v0.24** and **differential-dogs3 v0.24** (depends on timely v0.30 and columnar v0.13).
 API details may differ in other versions — check source files when in doubt.
 
 Differential dataflow builds on timely dataflow.
@@ -139,7 +139,7 @@ let arranged = collection.arrange_by_self();
 
 Under the hood, `arrange_core` builds a timely operator that:
 1. Receives `(data, time, diff)` triples.
-2. Batches them using a `Batcher` until the frontier advances.
+2. Chunks the input container with a `ContainerBuilder`, then accumulates the chunks in a `Batcher` until the frontier advances.
 3. Seals completed batches and inserts them into the trace.
 4. Outputs batches on the stream for downstream operators.
 
@@ -226,14 +226,15 @@ For maximum control, `join_core_internal_unsafe` gives the closure direct cursor
 ### `arrange_core`
 
 ```rust
-pub fn arrange_core<'scope, P, Ba, Bu, Tr>(
-    stream: Stream<'scope, Tr::Time, Ba::Input>,
+pub fn arrange_core<'scope, P, C, Chu, Ba, Bu, Tr>(
+    stream: Stream<'scope, Tr::Time, C>,
     pact: P,
     name: &str,
 ) -> Arranged<'scope, TraceAgent<Tr>>
 ```
 
-Parameterized by batcher (`Ba`), builder (`Bu`), and trace (`Tr`) types.
+Parameterized by input container (`C`), chunker (`Chu: ContainerBuilder`), batcher (`Ba`), builder (`Bu`), and trace (`Tr`) types.
+The chunker turns the input container into the batcher's input, so the `Batcher` is independent of the input container type.
 The high-level `arrange_by_key` picks sensible defaults.
 
 ## Trace and cursor API
@@ -364,7 +365,7 @@ Key types:
 
 ## Columnar data representation
 
-DD can use columnar containers (from the `columnar` crate v0.12) as backing storage for trace batches.
+DD can use columnar containers (from the `columnar` crate) as backing storage for trace batches.
 The `ColumnarLayout` type maps each column (keys, vals, times, diffs) to columnar storage, and `Coltainer<C>` wraps a columnar container to implement DD's `BatchContainer` trait.
 
 For the full columnar API (traits, derive macro, container types, serialization), see the `using-columnar` skill.
